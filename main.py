@@ -1,10 +1,15 @@
+import os
 import re
+import threading
 import uuid
+from tkinter import PhotoImage
+
 import pandas as pd
 import ttkbootstrap as ttk
-import spacy
 from fuzzywuzzy import fuzz
 import pyperclip
+
+comparison_threshold = 80
 
 
 def copy_from_treeview(tree, event):
@@ -64,20 +69,6 @@ def get_values_and_names(content):
     return df
 
 
-def spacy_similarity(name1, name2):
-    # Load spaCy language model
-    nlp = spacy.load('en_core_web_md')
-    try:
-        doc1 = nlp(name1.lower())
-        doc2 = nlp(name2.lower())
-        if doc1.vector_norm and doc2.vector_norm:
-            return doc1.similarity(doc2)
-    except:
-        print(f"Failed comparing {name1} with {name2}")
-        pass
-    return 0.0
-
-
 def clean_name(name):
     if isinstance(name, str):
         name = name.lower()
@@ -91,7 +82,6 @@ def clean_name(name):
 
     return name
 
-comparison_threshold = 80
 
 def fuzzy_similarity(name1: str, name2: str):
     if name1 != "" and name2 != "":
@@ -110,11 +100,19 @@ def fuzzy_similarity(name1: str, name2: str):
     return False
 
 
+def relative_path(relative_path):
+    absolute_path = os.path.dirname(__file__)
+    full_path = os.path.join(absolute_path, relative_path)
+
+    return full_path
+
 class MainWindow:
     similar_rows = []
     not_found = []
     found_df = pd.DataFrame
     not_found_df = pd.DataFrame
+    not_found_count = 0
+    threads = {'submit': []}
 
     class Colors:
 
@@ -123,7 +121,10 @@ class MainWindow:
 
     def __init__(self):
 
-        self.root = ttk.Window(themename="darkly")
+        self.root = ttk.Window(themename="darkly", iconphoto=relative_path('icon.png'))
+        img = PhotoImage(file=relative_path('icon.png'))
+        self.root.iconbitmap(relative_path('icon.ico'))
+        self.root.iconphoto(False, img)
         self.root.title("Diferença em Comprovantes e Entradas")
 
         # Comprobantes Entry
@@ -234,22 +235,17 @@ class MainWindow:
                 "original": comprobante_row['original']
             })
 
-    def on_submit(self,):
+    def on_submit(self, comprobantes_text, entradas_text):
+
         self.similar_rows = []
         self.not_found = []
-
-        comprobantes_text = self.comprobantes_entry.get("1.0", "end-1c").split('\n')
-        entradas_text = self.entradas_entry.get("1.0", "end-1c").split('\n')
 
         # Create DataFrames for both comprobantes and entradas
         self.df_comprobantes = get_values_and_names(comprobantes_text)
         self.df_entradas = get_values_and_names(entradas_text)
 
-        sum_comprobantes = self.df_comprobantes['values'].sum()
-        sum_entradas = self.df_entradas['values'].sum()
-
-        self.sum_label.config(
-            text=f"Total em Comprovantes: {float(sum_comprobantes):.2f} | Total em Entradas: {float(sum_entradas):.2f}\nTotal de diferença: {float(sum_comprobantes - sum_entradas):.2f}")
+        self.sum_comprobantes = self.df_comprobantes['values'].sum()
+        self.sum_entradas = self.df_entradas['values'].sum()
 
         for _, comprobante_row in self.df_comprobantes.iterrows():
             found_similarity = False
@@ -311,45 +307,62 @@ class MainWindow:
         self.found_df = pd.DataFrame(self.similar_rows)
         self.not_found_df_entradas = pd.DataFrame(self.not_found)  # Create DataFrame for not found entradas
 
-        # Update the Treeview with the similar result
-        for child in self.found_tree.get_children():
-            self.found_tree.delete(child)
-
-        try:
-            self.found_df = self.found_df.sort_values(by='values', ascending=False)
-            for index, row in self.found_df.iterrows():
-                self.found_tree.insert('', ttk.END, values=(row['values'], row['names']))
-        except:
-            pass
-
-        try:
-            for child in self.not_found_tree.get_children():
-                self.not_found_tree.delete(child)
-        except:
-            pass
-
         try:
             self.not_found_df_entradas = self.not_found_df_entradas[~self.not_found_df_entradas['ids'].isin([e["ids"] for e in self.similar_rows if len(self.similar_rows)])]
             self.not_found_df_entradas = self.not_found_df_entradas.sort_values(by='values', ascending=False)
         except:
             pass
 
-        not_found_count = 0
-        for index, row in self.not_found_df_entradas.iterrows():
 
-            if row['origin'] == "comprobantes":
-                self.not_found_tree.insert('', ttk.END, values=(row['values'], row['names']),
-                                      tags=('comprobantes',))
-            elif row['origin'] == "entradas":
-                self.not_found_tree.insert('', ttk.END, values=(row['values'], row['names']),
-                                      tags=('entradas',))
-                not_found_count += 1
-
-        # Display the length of the similar, dissimilar, and not found entradas DataFrames
-        self.result_label.config(text=f"Encontrados: {len(self.found_df)} | Não Encontrados: {not_found_count}")
-        
     def submit_with_delay(self,):
-        self.root.after(100, self.on_submit)
+
+        comprobantes_text = self.comprobantes_entry.get("1.0", "end-1c").split('\n')
+        entradas_text = self.entradas_entry.get("1.0", "end-1c").split('\n')
+
+        self.threads['submit'].append(threading.Thread(target=self.on_submit, args=(comprobantes_text, entradas_text)))
+
+        def run_in_bg():
+            for idx, thr in enumerate(self.threads['submit']):
+                del self.threads['submit'][idx]
+                thr.start()
+                thr.join()
+
+                self.sum_label.config(
+                    text=f"Total em Comprovantes: {float(self.sum_comprobantes):.2f} | Total em Entradas: {float(self.sum_entradas):.2f}\nTotal de diferença: {float(self.sum_comprobantes - self.sum_entradas):.2f}")
+
+                # Update the Treeview with the similar result
+                for child in self.found_tree.get_children():
+                    self.found_tree.delete(child)
+
+                try:
+                    self.found_df = self.found_df.sort_values(by='values', ascending=False)
+                    for index, row in self.found_df.iterrows():
+                        self.found_tree.insert('', ttk.END, values=(row['values'], row['names']))
+                except:
+                    pass
+
+                try:
+                    for child in self.not_found_tree.get_children():
+                        self.not_found_tree.delete(child)
+                except:
+                    pass
+
+                self.result_label.config(
+                    text=f"Encontrados: {len(self.found_df)} | Não Encontrados: {self.not_found_count}")
+
+                self.not_found_count = 0
+                for index, row in self.not_found_df_entradas.iterrows():
+
+                    if row['origin'] == "comprobantes":
+                        self.not_found_tree.insert('', ttk.END, values=(row['values'], row['names']),
+                                                   tags=('comprobantes',))
+                    elif row['origin'] == "entradas":
+                        self.not_found_tree.insert('', ttk.END, values=(row['values'], row['names']),
+                                                   tags=('entradas',))
+                        self.not_found_count += 1
+
+        run_in_bg()
+
 
     def copy_result(self):
         #print(self.found_df.head())
