@@ -1,0 +1,2 @@
+[console_scripts]
+tcb = tcb_sheet_tools:MainWindow

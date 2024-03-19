@@ -1,0 +1,6 @@
+ttkbootstrap
+pandas
+ttkbootstrap
+fuzzywuzzy
+pyperclip
+python-Levenshtein
