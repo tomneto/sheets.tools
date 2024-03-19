@@ -4,10 +4,12 @@ import threading
 import uuid
 from tkinter import PhotoImage
 
+import numpy as np
 import pandas as pd
 import ttkbootstrap as ttk
 from fuzzywuzzy import fuzz
 import pyperclip
+from icecream import ic
 
 comparison_threshold = 80
 
@@ -24,7 +26,7 @@ def copy_from_treeview(tree, event):
     pyperclip.copy(result)
 
 
-def get_values_and_names(content):
+def get_values_and_names(content, skipcols=0):
     values_pattern = r'R\$ ([^\t]+)'
 
     values = []
@@ -57,13 +59,16 @@ def get_values_and_names(content):
 
         # Extract names
         names_match = re.search(r'\t([^\t]+)$', item)
+        ic(names_match)
         if names_match:
             name = names_match.group(1)
+            ic(names_match.lastgroup)
             names.append(name)
         else:
             names.append(None)
         ids.append(uuid.uuid4().hex)
 
+    ic(content)
     df = pd.DataFrame({"ids": ids, 'values': values, 'names': names, 'original': content})
     df.dropna(subset=['values', 'names'], how='all', inplace=True)
     return df
@@ -106,6 +111,7 @@ def relative_path(relative_path):
 
     return full_path
 
+
 class MainWindow:
     similar_rows = []
     not_found = []
@@ -145,9 +151,12 @@ class MainWindow:
         submit_button = ttk.Button(self.root, text="Comparar", command=self.submit_with_delay)
         submit_button.grid(row=4, column=0, pady=(10, 0))
 
+        convert_button = ttk.Button(self.root, text="Converter Entradas", command=self.convert_statement_to_table)
+        convert_button.grid(row=5, column=0, pady=(10, 0))
+
         # Submit Button
         copy_result = ttk.Button(self.root, text="Copiar Resultado", command=self.copy_result)
-        copy_result.grid(row=5, column=0, pady=(10, 0))
+        copy_result.grid(row=6, column=0, pady=(10, 0))
 
         # Similar Result Treeview
         found_label = ttk.Label(self.root, text="Encontrados:")
@@ -313,11 +322,13 @@ class MainWindow:
         except:
             pass
 
-
     def submit_with_delay(self,):
 
         comprobantes_text = self.comprobantes_entry.get("1.0", "end-1c").split('\n')
         entradas_text = self.entradas_entry.get("1.0", "end-1c").split('\n')
+
+        ic(comprobantes_text)
+        ic(entradas_text)
 
         self.threads['submit'].append(threading.Thread(target=self.on_submit, args=(comprobantes_text, entradas_text)))
 
@@ -363,6 +374,73 @@ class MainWindow:
 
         run_in_bg()
 
+    def convert_statement_to_table(self,):
+
+        entradas_text = self.entradas_entry.get("1.0", "end-1c").split('\n')
+
+        values_pattern = r'R\$ ([^\t]+)'
+        outgoing_value_pattern = r'- R\$ ([^\t]+)'
+        values = []
+        names = []
+        ids = []
+
+        for item in entradas_text:
+
+            value_match = re.search(values_pattern, item)
+            negative_value_match = re.search(outgoing_value_pattern, item)
+            names_match = re.search(r'\t([^\t]+)', item)
+
+            value = False
+
+            if value_match and not negative_value_match:
+                value_str = value_match.group(1)
+                value_str = value_str.replace('.', '')
+                value = value_str.replace(',', '.')
+
+            else:
+                row = item.split('\t')
+                for each in row:
+                    try:
+                        each = each.replace('.', '')
+                        each = each.replace(',', '.')
+                        ic(each)
+                        value = float(each)
+                        break
+                    except:
+                        pass
+            if value:
+                ic(value)
+                values.append(float(value))
+            else:
+                values.append(None)
+
+            # Extract names
+
+            if names_match:
+                name = names_match.group(1)
+                ic(names_match.lastgroup)
+                names.append(name)
+            else:
+                names.append(None)
+            ids.append(uuid.uuid4().hex)
+
+        df = pd.DataFrame({'values': values, 'names': names})
+        df.dropna(subset=['values', 'names'], how='all', inplace=True)
+
+        result = ""
+        total_incoming = 0
+
+        # process only positive values:
+        for index, row in df[~pd.isna(df['values'])].iterrows():
+            result += f"""{str(row['values']).replace('.', ',')}"""
+            result += f"""\t{str(row['names'])}"""
+            total_incoming += float(row['values'])
+            result += "\n"
+
+        self.sum_label.config(
+            text=f"Total em Entradas: {float(total_incoming):.2f}")
+
+        pyperclip.copy(str(result))
 
     def copy_result(self):
         #print(self.found_df.head())

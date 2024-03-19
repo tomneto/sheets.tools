@@ -7,7 +7,7 @@
   },
   {
    "optionDest": "filenames",
-   "value": "./main.py"
+   "value": "/Volumes/Git/Clientes/TCB/sheets.tools/main.py"
   },
   {
    "optionDest": "onefile",
@@ -19,7 +19,7 @@
   },
   {
    "optionDest": "icon_file",
-   "value": "./icon.ico"
+   "value": "/Volumes/Git/Clientes/TCB/sheets.tools/icon.ico"
   },
   {
    "optionDest": "clean_build",
@@ -55,11 +55,11 @@
   },
   {
    "optionDest": "datas",
-   "value": "./icon.ico:."
+   "value": "/Volumes/Git/Clientes/TCB/sheets.tools/icon.ico:."
   },
   {
    "optionDest": "datas",
-   "value": "./icon.png:."
+   "value": "/Volumes/Git/Clientes/TCB/sheets.tools/icon.png:."
   }
  ],
  "nonPyinstallerOptions": {
