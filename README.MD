@@ -29,7 +29,7 @@
 
 1 - Selecione as Entradas no Extrato:
 
-![img.png](./readme/entradas-extrato1.png)
+![img.png](./readme/entradas-extrato11.png)
 
 2 - Cole-as no campo "Entradas" e clique em Converter Entradas:
 
