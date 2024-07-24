@@ -2,16 +2,20 @@ import os
 import re
 import threading
 import uuid
+from enum import Enum
 from tkinter import PhotoImage
 
-import numpy as np
 import pandas as pd
 import ttkbootstrap as ttk
 from fuzzywuzzy import fuzz
 import pyperclip
-from icecream import ic
 
 comparison_threshold = 80
+
+
+class DesiredPattern(Enum):
+    incoming: str = "incoming"
+    outgoing: str = "outgoing"
 
 
 def copy_from_treeview(tree, event):
@@ -34,8 +38,6 @@ def get_values_and_names(content, skipcols=0):
     ids = []
 
     for item in content:
-        print(item)
-        print(item.split('\t'))
         value_match = re.search(values_pattern, item)
         value = False
         if value_match:
@@ -59,16 +61,13 @@ def get_values_and_names(content, skipcols=0):
 
         # Extract names
         names_match = re.search(r'\t([^\t]+)$', item)
-        ic(names_match)
         if names_match:
             name = names_match.group(1)
-            ic(names_match.lastgroup)
             names.append(name)
         else:
             names.append(None)
         ids.append(uuid.uuid4().hex)
 
-    ic(content)
     df = pd.DataFrame({"ids": ids, 'values': values, 'names': names, 'original': content})
     df.dropna(subset=['values', 'names'], how='all', inplace=True)
     return df
@@ -96,20 +95,18 @@ def fuzzy_similarity(name1: str, name2: str):
         for word_1 in name1.split(' '):
             for word_2 in name2.split(' '):
                 if word_2 != "" and word_1 != "":
-                    #print(f"Comparing {word_1, word_2}")
                     similarity = fuzz.token_sort_ratio(word_1, word_2)
                     if similarity >= comparison_threshold:
                         return True
-                    #print(f"Comparing results false for {word_1, word_2}")
 
     return False
 
 
-def relative_path(relative_path):
+def relative_path(relative_path) -> str:
     absolute_path = os.path.dirname(__file__)
     full_path = os.path.join(absolute_path, relative_path)
 
-    return full_path
+    return str(full_path)
 
 
 class MainWindow:
@@ -119,9 +116,9 @@ class MainWindow:
     not_found_df = pd.DataFrame
     not_found_count = 0
     threads = {'submit': []}
+    conversion_type = "Entradas"
 
     class Colors:
-
         comprobante_not_found = "#a83232"
         entrada_not_found = "#8c7f00"
 
@@ -148,15 +145,18 @@ class MainWindow:
         self.entradas_entry.grid(row=3, column=0, padx=5, pady=5, sticky="nsew")
 
         # Submit Button
-        submit_button = ttk.Button(self.root, text="Comparar", command=self.submit_with_delay)
+        submit_button = ttk.Button(self.root, text="Comparar", command=self.compare_entradas_comprobantes)
         submit_button.grid(row=4, column=0, pady=(10, 0))
 
-        convert_button = ttk.Button(self.root, text="Converter Entradas", command=self.convert_statement_to_table)
-        convert_button.grid(row=5, column=0, pady=(10, 0))
+        convert_button_income = ttk.Button(self.root, text="Converter Entradas", command=self.convert_statement_to_table)
+        convert_button_income.grid(row=5, column=0, pady=(10, 0))
+        
+        convert_button_outgoing = ttk.Button(self.root, text="Converter Saidas", command=lambda: self.convert_statement_to_table(DesiredPattern.outgoing))
+        convert_button_outgoing.grid(row=6, column=0, pady=(10, 0))
 
         # Submit Button
         copy_result = ttk.Button(self.root, text="Copiar Resultado", command=self.copy_result)
-        copy_result.grid(row=6, column=0, pady=(10, 0))
+        copy_result.grid(row=7, column=0, pady=(10, 0))
 
         # Similar Result Treeview
         found_label = ttk.Label(self.root, text="Encontrados:")
@@ -270,21 +270,17 @@ class MainWindow:
                             found_similarity = True
                             already_used = entrada_row['ids'] in [e['ids'] for e in self.similar_rows]
                             if not already_used:
-                                #print(f"\n\nAppending to similar: {entrada_row['names']} matching with: {comprobante_row['names']} \n\n")
                                 self.similar_rows.append(
                                     {'ids': entrada_row['ids'], 'values': entrada_row['values'],
                                      'names': entrada_row['names'], "origin": "entradas",
                                      "original": entrada_row['original'], "matching_id": comprobante_row['ids']})
                                 break
 
-            #print(f"Comprobante Match trying to append...")
             if found_similarity and not already_used:
-                #print(f"Comprobante Match: {comprobante_row['names'], comprobante_row['values']}")
                 self.similar_rows.append({'ids': comprobante_row['ids'], 'values': comprobante_row['values'],
                                  'names': comprobante_row['names'], "origin": "comprobantes", "original": comprobante_row['original']})
 
             else:
-                #print(f"Comprobante don't Match: {comprobante_row['names'], comprobante_row['values']}")
                 self.not_found.append(
                     {'ids': comprobante_row['ids'], 'values': comprobante_row['values'],
                  'names': comprobante_row['names'], "origin": "comprobantes", "original": comprobante_row['original']})  # Add to not found entradas
@@ -306,10 +302,8 @@ class MainWindow:
                                 break
 
             if found_similarity and not already_used:
-                #print(f"Entrada Match: {entrada_row['names'], entrada_row['values']}")
                 self.similar_rows.append({'ids': entrada_row['ids'], 'values': entrada_row['values'], 'names': entrada_row['names'], "origin": "entradas", "original": entrada_row['original']})
             else:
-                #print(f"Entrada don't Match: {entrada_row['names'], entrada_row['values']}")
                 self.not_found.append({'ids': entrada_row['ids'], 'values': entrada_row['values'], 'names': entrada_row['names'], "origin": "entradas", "original": entrada_row['original']})
 
         # Create DataFrames from the result rows
@@ -322,13 +316,10 @@ class MainWindow:
         except:
             pass
 
-    def submit_with_delay(self,):
+    def compare_entradas_comprobantes(self, ):
 
         comprobantes_text = self.comprobantes_entry.get("1.0", "end-1c").split('\n')
         entradas_text = self.entradas_entry.get("1.0", "end-1c").split('\n')
-
-        ic(comprobantes_text)
-        ic(entradas_text)
 
         self.threads['submit'].append(threading.Thread(target=self.on_submit, args=(comprobantes_text, entradas_text)))
 
@@ -346,9 +337,10 @@ class MainWindow:
                     self.found_tree.delete(child)
 
                 try:
-                    self.found_df = self.found_df.sort_values(by='values', ascending=False)
+                    #self.found_df = self.found_df.sort_values(by='values', ascending=False)
                     for index, row in self.found_df.iterrows():
-                        self.found_tree.insert('', ttk.END, values=(row['values'], row['names']))
+                        if row['origin'] == "comprobantes":
+                            self.found_tree.insert('', ttk.END, values=(row['values'], row['names']))
                 except:
                     pass
 
@@ -358,8 +350,7 @@ class MainWindow:
                 except:
                     pass
 
-                self.result_label.config(
-                    text=f"Encontrados: {len(self.found_df)} | Não Encontrados: {self.not_found_count}")
+                self.result_label.config(text=f"Encontrados: {len(self.found_df)} | Não Encontrados: {self.not_found_count}")
 
                 self.not_found_count = 0
                 for index, row in self.not_found_df_entradas.iterrows():
@@ -372,9 +363,13 @@ class MainWindow:
                                                    tags=('entradas',))
                         self.not_found_count += 1
 
+                self.result_label.config(text=f"Encontrados: {len(self.found_df)} | Não Encontrados: {self.not_found_count}")
+
         run_in_bg()
 
-    def convert_statement_to_table(self,):
+        #self.on_submit(comprobantes_text, entradas_text)
+
+    def convert_statement_to_table(self, desired_pattern: DesiredPattern = DesiredPattern.incoming):
 
         entradas_text = self.entradas_entry.get("1.0", "end-1c").split('\n')
 
@@ -385,14 +380,24 @@ class MainWindow:
         ids = []
 
         for item in entradas_text:
-
-            value_match = re.search(values_pattern, item)
-            negative_value_match = re.search(outgoing_value_pattern, item)
-            names_match = re.search(r'\t([^\t]+)', item)
-
             value = False
 
-            if value_match and not negative_value_match:
+            if desired_pattern != DesiredPattern.outgoing:
+                value_match = re.search(values_pattern, item)
+                negative_value_match = re.search(outgoing_value_pattern, item)
+                names_match = re.search(r'\t([^\t]+)', item)
+                criteria = value_match and not negative_value_match
+                self.conversion_type = "Entradas"
+            else:
+                outgoing_value_pattern = r'-R\$ ([^\t]+)'
+                negative_value_match = re.search(outgoing_value_pattern, item)
+                value_match = re.search(values_pattern, item)
+                names_match = re.search(r'\tTAR enviado:([^\t]+)', item)
+
+                criteria = value_match and negative_value_match
+                self.conversion_type = "Saídas"
+
+            if criteria:
                 value_str = value_match.group(1)
                 value_str = value_str.replace('.', '')
                 value = value_str.replace(',', '.')
@@ -403,13 +408,12 @@ class MainWindow:
                     try:
                         each = each.replace('.', '')
                         each = each.replace(',', '.')
-                        ic(each)
+
                         value = float(each)
                         break
                     except:
                         pass
             if value:
-                ic(value)
                 values.append(float(value))
             else:
                 values.append(None)
@@ -418,10 +422,10 @@ class MainWindow:
 
             if names_match:
                 name = names_match.group(1)
-                ic(names_match.lastgroup)
                 names.append(name)
             else:
                 names.append(None)
+
             ids.append(uuid.uuid4().hex)
 
         df = pd.DataFrame({'values': values, 'names': names})
@@ -438,46 +442,50 @@ class MainWindow:
             result += "\n"
 
         self.sum_label.config(
-            text=f"Total em Entradas: {float(total_incoming):.2f}")
+
+            text=f"Total em {self.conversion_type}: {float(total_incoming):.2f}")
 
         pyperclip.copy(str(result))
 
     def copy_result(self):
-        #print(self.found_df.head())
         result = ""
+        already_used = []
 
-        result += "Encontrados\n"
-        for index, row in self.found_df[self.found_df['origin'] == "comprobantes"].iterrows():
-            # this must be green
-            equivalent_entrada = list(self.found_df[self.found_df['matching_id'] == row['ids']].iterrows())[0][1]
-            result += f"""{",".join([row['original'].replace("R$", "")])}\t\t{str(equivalent_entrada['original'])}\n"""
+        if len(self.found_df):
+            result += "Encontrados\n"
+            for index, row in self.found_df[self.found_df['origin'] == "comprobantes"].iterrows():
+                equivalent_incoming = list(self.found_df[self.found_df['matching_id'] == row['ids']].iterrows())[0][1]
+                result += f"""{",".join([row['original'].replace("R$", "")])}\t\t{str(equivalent_incoming['original'])}\n"""
 
         not_found_entradas = self.not_found_df_entradas[self.not_found_df_entradas['origin'] == "entradas"].sort_values('values', ascending=False)
-        not_found_comprovantes = self.not_found_df_entradas[self.not_found_df_entradas['origin'] == "comprobantes"].sort_values('values', ascending=False)
+        not_found_comprabantes = self.not_found_df_entradas[self.not_found_df_entradas['origin'] == "comprobantes"].sort_values('values', ascending=False)
 
-        # Assuming 'values' is the column you want to use for left join
-        merged_df = pd.merge(not_found_entradas, not_found_comprovantes, on='values', how='left',
-                             suffixes=('_entradas', '_comprovantes'))
-
-        # Replace NaN values with '\t'
+        merged_df = pd.merge(not_found_entradas, not_found_comprabantes, on='values', how='left',
+                             suffixes=('_entradas', '_comprabantes'))
         merged_df.fillna('\t', inplace=True)
 
-        result += "\n\nNão Encontrados\n"
+        result += "\n\nEntradas Não Encontradas (Verdes)\n"
         for index, row in merged_df.iterrows():
-            result += f"""\t{",".join([row['original_entradas'].replace("R$", "")])}"""
-            result += f"""\t\t{str(row['original_comprovantes'])}"""
-            result += "\n"
+            if row['origin_entradas'] != "\t":
+                result += f"""\t{",".join([row['original_entradas'].replace("R$", "")])}"""
+                result += f"""\t\t{str(row['original_comprabantes'])}"""
+                result += "\n"
 
-        # result += "Entradas Faltantes\n\n"
-        # for index, row in self.not_found_df_entradas[self.not_found_df_entradas['origin'] == "entradas"].iterrows():
-        #     # this must be yellow
-        #     result += f"""\t{",".join([row['original'].replace("R$", "")])}\n"""
-#
-        # result += "Comprovantes Faltantes\n\n"
-        # for index, row in self.not_found_df_entradas[self.not_found_df_entradas['origin'] == "comprobantes"].iterrows():
-        #     # this must be red
-        #     result += f"""{",".join([row['original'].replace("R$", "")])}\n"""
-#
+        result += "\n\nComprovantes com Entradas Semelhantes (Amarelos)\n"
+        for index, row in merged_df.iterrows():
+            if row['origin_comprabantes'] != "\t":
+                #result += f"""\t{",".join([row['original_entradas'].replace("R$", "")])}"""
+                result += f"""\t{str(row['original_comprabantes'])}"""
+                result += "\n"
+                already_used.append(str(f"{index} {row['original_comprabantes']}"))
+
+        result += "\n\nComprovantes Não Encontrados (Vermelhos)\n"
+        for index, row in enumerate(self.not_found):
+            if row["origin"] == "comprobantes" and row['original'] != "\t" and str(f"{index} {str(row['original'])}") not in already_used:
+                #result += f"""\t{",".join([row['original_entradas'].replace("R$", "")])}"""
+                result += f"""\t{str(row['original'])}"""
+                result += "\n"
+
         pyperclip.copy(result)
         return result
 

@@ -3,3 +3,4 @@ ttkbootstrap
 fuzzywuzzy
 pyperclip
 python-Levenshtein
+icecream
