@@ -7,10 +7,11 @@ from tkinter import PhotoImage
 
 import pandas as pd
 import ttkbootstrap as ttk
-from fuzzywuzzy import fuzz
 import pyperclip
-
-comparison_threshold = 80
+from icecream import ic
+from test import load_test
+from system import relative_path
+from prediction import get_values_and_names, Comparison
 
 
 class DesiredPattern(Enum):
@@ -30,97 +31,28 @@ def copy_from_treeview(tree, event):
     pyperclip.copy(result)
 
 
-def get_values_and_names(content, skipcols=0):
-    values_pattern = r'R\$ ([^\t]+)'
-
-    values = []
-    names = []
-    ids = []
-
-    for item in content:
-        value_match = re.search(values_pattern, item)
-        value = False
-        if value_match:
-            value_str = value_match.group(1)
-            value_str = value_str.replace('.', '')
-            value = value_str.replace(',', '.')
-        else:
-            row = item.split('\t')
-            for each in row:
-                try:
-                    each = each.replace('.', '')
-                    each = each.replace(',', '.')
-                    value = float(each)
-                    break
-                except:
-                    pass
-        if value:
-            values.append(float(value))
-        else:
-            values.append(None)
-
-        # Extract names
-        names_match = re.search(r'\t([^\t]+)$', item)
-        if names_match:
-            name = names_match.group(1)
-            names.append(name)
-        else:
-            names.append(None)
-        ids.append(uuid.uuid4().hex)
-
-    df = pd.DataFrame({"ids": ids, 'values': values, 'names': names, 'original': content})
-    df.dropna(subset=['values', 'names'], how='all', inplace=True)
-    return df
-
-
-def clean_name(name):
-    if isinstance(name, str):
-        name = name.lower()
-
-        to_ignore = ['pix', 'recebido', '-']
-        for ignored_word in to_ignore:
-            name = name.replace(ignored_word, '')
-
-        # remove numbers from name
-        name = re.sub(r'[0-9]+', '', name)
-
-    return name
-
-
-def fuzzy_similarity(name1: str, name2: str):
-    if name1 != "" and name2 != "":
-        name1 = clean_name(name1)
-        name2 = clean_name(name2)
-
-        for word_1 in name1.split(' '):
-            for word_2 in name2.split(' '):
-                if word_2 != "" and word_1 != "":
-                    similarity = fuzz.token_sort_ratio(word_1, word_2)
-                    if similarity >= comparison_threshold:
-                        return True
-
-    return False
-
-
-def relative_path(relative_path) -> str:
-    absolute_path = os.path.dirname(__file__)
-    full_path = os.path.join(absolute_path, relative_path)
-
-    return str(full_path)
-
-
 class MainWindow:
-    similar_rows = []
-    not_found = []
-    found_df = pd.DataFrame
-    not_found_df = pd.DataFrame
-    not_found_count = 0
-    threads = {'submit': []}
-    conversion_type = "Entradas"
+    df_comp: pd.DataFrame
+    df_income: pd.DataFrame
+    
+    df_found: pd.DataFrame
+
+    df_not_found_comp: pd.DataFrame
+    df_not_found_income: pd.DataFrame
+
+    not_found_count: int = 0
+
+    threads: dict = {'submit': []}
+    conversion_type: str = "Entradas"
+
+    comparison: Comparison
+
+    sum_comp: int = 0
+    sum_income: int = 0
 
     class Colors:
-        comprobante_not_found = "#a83232"
-        entrada_not_found = "#8c7f00"
+        comp_not_found = "#a83232"
+        income_not_found = "#8c7f00"
 
     def __init__(self):
 
@@ -131,21 +63,23 @@ class MainWindow:
         self.root.title("Diferença em Comprovantes e Entradas")
 
         # Comprobantes Entry
-        comprobantes_label = ttk.Label(self.root, text="Comprovantes:")
-        comprobantes_label.grid(row=0, column=0, sticky="w")
+        comp_label = ttk.Label(self.root, text="Comprovantes:")
+        comp_label.grid(row=0, column=0, sticky="w")
 
-        self.comprobantes_entry = ttk.Text(self.root, height=5, width=40)
-        self.comprobantes_entry.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
+        self.comp_entry = ttk.Text(self.root, height=5, width=40)
+        self.comp_entry.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
 
         # Entradas Entry
-        entradas_label = ttk.Label(self.root, text="Entradas:")
-        entradas_label.grid(row=2, column=0, sticky="w", pady=(10, 0))
+        income_label = ttk.Label(self.root, text="Entradas:")
+        income_label.grid(row=2, column=0, sticky="w", pady=(10, 0))
 
-        self.entradas_entry = ttk.Text(self.root, height=5, width=40)
-        self.entradas_entry.grid(row=3, column=0, padx=5, pady=5, sticky="nsew")
+        self.income_entry = ttk.Text(self.root, height=5, width=40)
+        self.income_entry.grid(row=3, column=0, padx=5, pady=5, sticky="nsew")
+
+        load_test(self.income_entry, self.comp_entry)
 
         # Submit Button
-        submit_button = ttk.Button(self.root, text="Comparar", command=self.compare_entradas_comprobantes)
+        submit_button = ttk.Button(self.root, text="Comparar", command=self.compare_income_comp)
         submit_button.grid(row=4, column=0, pady=(10, 0))
 
         convert_button_income = ttk.Button(self.root, text="Converter Entradas", command=self.convert_statement_to_table)
@@ -181,8 +115,8 @@ class MainWindow:
         self.not_found_tree.heading('values', text='Valor')
         self.not_found_tree.heading('names', text='Nome')
         self.not_found_tree.heading('origin', text='Fonte')
-        self.not_found_tree.tag_configure('comprobantes', background=self.Colors.comprobante_not_found)
-        self.not_found_tree.tag_configure('entradas', background=self.Colors.entrada_not_found)
+        self.not_found_tree.tag_configure('comprobantes', background=self.Colors.comp_not_found)
+        self.not_found_tree.tag_configure('entradas', background=self.Colors.income_not_found)
         self.not_found_tree.grid(row=1, column=2, rowspan=4, padx=5, pady=5, sticky="nsew")
 
         # Result Label for Length
@@ -202,126 +136,22 @@ class MainWindow:
 
         self.root.mainloop()
 
-    def process_comprobante(self, comprobante_row, df_entradas, similar_rows, not_found):
-        found_similarity = False
-        already_used = False
+    def on_submit(self, comp_text: list, income_text: list):
 
-        for _, entrada_row in df_entradas.iterrows():
-            # Compare values for equality
-            if comprobante_row['values'] == entrada_row['values']:
-                # Calculate similarity for names
-                if comprobante_row['names'] is not None and entrada_row['names'] is not None:
-                    name_similarity = fuzzy_similarity(comprobante_row['names'], entrada_row['names'])
-                    # Check if names are similar
-                    if name_similarity:
-                        found_similarity = True
-                        already_used = entrada_row['ids'] in [e['ids'] for e in similar_rows]
-                        if not already_used:
-                            similar_rows.append({
-                                'ids': entrada_row['ids'],
-                                'values': entrada_row['values'],
-                                'names': entrada_row['names'],
-                                "origin": "entradas",
-                                "original": entrada_row['original'],
-                                "matching_id": comprobante_row['ids']
-                            })
-                            break
+        self.df_comp = get_values_and_names(comp_text)
+        self.df_income = get_values_and_names(income_text)
 
-        if found_similarity and not already_used:
-            similar_rows.append({
-                'ids': comprobante_row['ids'],
-                'values': comprobante_row['values'],
-                'names': comprobante_row['names'],
-                "origin": "comprobantes",
-                "original": comprobante_row['original']
-            })
-        else:
-            not_found.append({
-                'ids': comprobante_row['ids'],
-                'values': comprobante_row['values'],
-                'names': comprobante_row['names'],
-                "origin": "comprobantes",
-                "original": comprobante_row['original']
-            })
+        self.sum_comp = self.df_comp['values'].sum()
+        self.sum_income = self.df_income['values'].sum()
 
-    def on_submit(self, comprobantes_text, entradas_text):
+        self.comparison = Comparison(df_income=self.df_income, df_comp=self.df_comp)
 
-        self.similar_rows = []
-        self.not_found = []
+    def compare_income_comp(self, ):
 
-        # Create DataFrames for both comprobantes and entradas
-        self.df_comprobantes = get_values_and_names(comprobantes_text)
-        self.df_entradas = get_values_and_names(entradas_text)
+        comp_text = self.comp_entry.get("1.0", "end-1c").split('\n')
+        income_text = self.income_entry.get("1.0", "end-1c").split('\n')
 
-        self.sum_comprobantes = self.df_comprobantes['values'].sum()
-        self.sum_entradas = self.df_entradas['values'].sum()
-
-        for _, comprobante_row in self.df_comprobantes.iterrows():
-            found_similarity = False
-            already_used = False
-            for _, entrada_row in self.df_entradas.iterrows():
-                # Compare values for equality
-                if comprobante_row['values'] == entrada_row['values']:
-                    # Calculate similarity for names
-                    if comprobante_row['names'] is not None and entrada_row['names'] is not None:
-                        name_similarity = fuzzy_similarity(comprobante_row['names'], entrada_row['names'])
-                        # Check if names are similar
-                        if name_similarity:
-                            found_similarity = True
-                            already_used = entrada_row['ids'] in [e['ids'] for e in self.similar_rows]
-                            if not already_used:
-                                self.similar_rows.append(
-                                    {'ids': entrada_row['ids'], 'values': entrada_row['values'],
-                                     'names': entrada_row['names'], "origin": "entradas",
-                                     "original": entrada_row['original'], "matching_id": comprobante_row['ids']})
-                                break
-
-            if found_similarity and not already_used:
-                self.similar_rows.append({'ids': comprobante_row['ids'], 'values': comprobante_row['values'],
-                                 'names': comprobante_row['names'], "origin": "comprobantes", "original": comprobante_row['original']})
-
-            else:
-                self.not_found.append(
-                    {'ids': comprobante_row['ids'], 'values': comprobante_row['values'],
-                 'names': comprobante_row['names'], "origin": "comprobantes", "original": comprobante_row['original']})  # Add to not found entradas
-
-        for _, entrada_row in self.df_entradas.iterrows():
-            found_similarity = False
-            already_used = False
-            for _, comprobante_row in self.df_comprobantes.iterrows():
-                # Compare values for equality
-                if comprobante_row['names'] is not None:
-                    if comprobante_row['values'] == entrada_row['values']:
-                        # Calculate spaCy similarity for names
-                        if comprobante_row['names'] is not None and entrada_row['names'] is not None:
-                            name_similarity = fuzzy_similarity(comprobante_row['names'], entrada_row['names'])
-                            # Check if names are similar
-                            if name_similarity:
-                                found_similarity = True
-                                already_used = entrada_row['ids'] in [e['ids'] for e in self.similar_rows]
-                                break
-
-            if found_similarity and not already_used:
-                self.similar_rows.append({'ids': entrada_row['ids'], 'values': entrada_row['values'], 'names': entrada_row['names'], "origin": "entradas", "original": entrada_row['original']})
-            else:
-                self.not_found.append({'ids': entrada_row['ids'], 'values': entrada_row['values'], 'names': entrada_row['names'], "origin": "entradas", "original": entrada_row['original']})
-
-        # Create DataFrames from the result rows
-        self.found_df = pd.DataFrame(self.similar_rows)
-        self.not_found_df_entradas = pd.DataFrame(self.not_found)  # Create DataFrame for not found entradas
-
-        try:
-            self.not_found_df_entradas = self.not_found_df_entradas[~self.not_found_df_entradas['ids'].isin([e["ids"] for e in self.similar_rows if len(self.similar_rows)])]
-            self.not_found_df_entradas = self.not_found_df_entradas.sort_values(by='values', ascending=False)
-        except:
-            pass
-
-    def compare_entradas_comprobantes(self, ):
-
-        comprobantes_text = self.comprobantes_entry.get("1.0", "end-1c").split('\n')
-        entradas_text = self.entradas_entry.get("1.0", "end-1c").split('\n')
-
-        self.threads['submit'].append(threading.Thread(target=self.on_submit, args=(comprobantes_text, entradas_text)))
+        self.threads['submit'].append(threading.Thread(target=self.on_submit, args=(comp_text, income_text)))
 
         def run_in_bg():
             for idx, thr in enumerate(self.threads['submit']):
@@ -329,18 +159,16 @@ class MainWindow:
                 thr.start()
                 thr.join()
 
-                self.sum_label.config(
-                    text=f"Total em Comprovantes: {float(self.sum_comprobantes):.2f} | Total em Entradas: {float(self.sum_entradas):.2f}\nTotal de diferença: {float(self.sum_comprobantes - self.sum_entradas):.2f}")
+                self.sum_label.config(text=f"Total em Comprovantes: {float(self.sum_comp):.2f} | Total em Entradas: {float(self.sum_income):.2f}\nTotal de diferença: {float(self.sum_comp - self.sum_income):.2f}")
 
                 # Update the Treeview with the similar result
                 for child in self.found_tree.get_children():
                     self.found_tree.delete(child)
 
                 try:
-                    #self.found_df = self.found_df.sort_values(by='values', ascending=False)
-                    for index, row in self.found_df.iterrows():
+                    for index, row in self.comparison.result.df_found.iterrows():
                         if row['origin'] == "comprobantes":
-                            self.found_tree.insert('', ttk.END, values=(row['values'], row['names']))
+                            self.found_tree.insert('', ttk.END, values=(row['values'], row['names'], row['origin']))
                 except:
                     pass
 
@@ -350,28 +178,24 @@ class MainWindow:
                 except:
                     pass
 
-                self.result_label.config(text=f"Encontrados: {len(self.found_df)} | Não Encontrados: {self.not_found_count}")
+                self.result_label.config(text=f"Encontrados: {len(self.comparison.result.df_found)} | Não Encontrados: {self.not_found_count}")
 
                 self.not_found_count = 0
-                for index, row in self.not_found_df_entradas.iterrows():
+                for index, row in self.comparison.result.df_not_found_income.iterrows():
+                    self.not_found_tree.insert('', ttk.END, values=(row['values'], row['names'], row['origin']), tags=('entradas',))
+                    self.not_found_count += 1
 
-                    if row['origin'] == "comprobantes":
-                        self.not_found_tree.insert('', ttk.END, values=(row['values'], row['names']),
-                                                   tags=('comprobantes',))
-                    elif row['origin'] == "entradas":
-                        self.not_found_tree.insert('', ttk.END, values=(row['values'], row['names']),
-                                                   tags=('entradas',))
-                        self.not_found_count += 1
+                for index, row in self.comparison.result.df_not_found_comp.iterrows():
+                    self.not_found_tree.insert('', ttk.END, values=(row['values'], row['names'], row['origin']), tags=('comprobantes',))
+                    self.not_found_count += 1
 
-                self.result_label.config(text=f"Encontrados: {len(self.found_df)} | Não Encontrados: {self.not_found_count}")
+                self.result_label.config(text=f"Encontrados: {len(self.comparison.result.df_found)} | Não Encontrados: {self.not_found_count}")
 
         run_in_bg()
 
-        #self.on_submit(comprobantes_text, entradas_text)
-
     def convert_statement_to_table(self, desired_pattern: DesiredPattern = DesiredPattern.incoming):
 
-        entradas_text = self.entradas_entry.get("1.0", "end-1c").split('\n')
+        income_text = self.income_entry.get("1.0", "end-1c").split('\n')
 
         values_pattern = r'R\$ ([^\t]+)'
         outgoing_value_pattern = r'- R\$ ([^\t]+)'
@@ -379,7 +203,7 @@ class MainWindow:
         names = []
         ids = []
 
-        for item in entradas_text:
+        for item in income_text:
             value = False
 
             if desired_pattern != DesiredPattern.outgoing:
@@ -446,48 +270,6 @@ class MainWindow:
             text=f"Total em {self.conversion_type}: {float(total_incoming):.2f}")
 
         pyperclip.copy(str(result))
-
-    def copy_result(self):
-        result = ""
-        already_used = []
-
-        if len(self.found_df):
-            result += "Encontrados\n"
-            for index, row in self.found_df[self.found_df['origin'] == "comprobantes"].iterrows():
-                equivalent_incoming = list(self.found_df[self.found_df['matching_id'] == row['ids']].iterrows())[0][1]
-                result += f"""{",".join([row['original'].replace("R$", "")])}\t\t{str(equivalent_incoming['original'])}\n"""
-
-        not_found_entradas = self.not_found_df_entradas[self.not_found_df_entradas['origin'] == "entradas"].sort_values('values', ascending=False)
-        not_found_comprabantes = self.not_found_df_entradas[self.not_found_df_entradas['origin'] == "comprobantes"].sort_values('values', ascending=False)
-
-        merged_df = pd.merge(not_found_entradas, not_found_comprabantes, on='values', how='left',
-                             suffixes=('_entradas', '_comprabantes'))
-        merged_df.fillna('\t', inplace=True)
-
-        result += "\n\nEntradas Não Encontradas (Verdes)\n"
-        for index, row in merged_df.iterrows():
-            if row['origin_entradas'] != "\t":
-                result += f"""\t{",".join([row['original_entradas'].replace("R$", "")])}"""
-                result += f"""\t\t{str(row['original_comprabantes'])}"""
-                result += "\n"
-
-        result += "\n\nComprovantes com Entradas Semelhantes (Amarelos)\n"
-        for index, row in merged_df.iterrows():
-            if row['origin_comprabantes'] != "\t":
-                #result += f"""\t{",".join([row['original_entradas'].replace("R$", "")])}"""
-                result += f"""\t{str(row['original_comprabantes'])}"""
-                result += "\n"
-                already_used.append(str(f"{index} {row['original_comprabantes']}"))
-
-        result += "\n\nComprovantes Não Encontrados (Vermelhos)\n"
-        for index, row in enumerate(self.not_found):
-            if row["origin"] == "comprobantes" and row['original'] != "\t" and str(f"{index} {str(row['original'])}") not in already_used:
-                #result += f"""\t{",".join([row['original_entradas'].replace("R$", "")])}"""
-                result += f"""\t{str(row['original'])}"""
-                result += "\n"
-
-        pyperclip.copy(result)
-        return result
 
 
 MainWindow()
