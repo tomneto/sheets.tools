@@ -10,8 +10,8 @@ def load_test(entradas: ttk.Text = None, comprobantes: ttk.Text = None) -> Tuple
     income_fp = "./._entradas"
     comp_fp = "./._comprovantes"
 
-    income_content: str
-    comp_content: str
+    income_content: str = ""
+    comp_content: str = ""
 
     if os.path.isfile(income_fp) and os.path.isfile(comp_fp):
 
@@ -33,22 +33,16 @@ def load_test(entradas: ttk.Text = None, comprobantes: ttk.Text = None) -> Tuple
 def test_comparison():
     income_content, comp_content = load_test()
 
-    income_file_line_count = len(income_content.split(sep='\n'))
-    comp_file_line_count = len(comp_content.split(sep='\n'))
-    ic(income_file_line_count, comp_file_line_count)
-
     df_comp = get_values_and_names(comp_content)
     df_income = get_values_and_names(income_content)
 
-    sum_comp = df_comp['values'].sum()
-    sum_income = df_income['values'].sum()
-    ic(sum_comp, sum_income)
+    comparison = Comparison()
+    comparison(df_income, df_comp)
 
-    comparison = Comparison(df_income=df_income, df_comp=df_comp)
+    assert len(comparison.result.df_found) == 10
+    assert len(comparison.result.df_not_found_comp) == 1
+    assert len(comparison.result.df_not_found_income) == 1
 
-    ic(comparison.similar_rows)
-    ic(comparison.not_found)
 
-    ic(comparison.copy_result())
-
-test_comparison()
+if __name__ == "__main__":
+    test_comparison()

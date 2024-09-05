@@ -9,9 +9,14 @@ import pandas as pd
 import ttkbootstrap as ttk
 import pyperclip
 from icecream import ic
+
+import scrape
+from config import Config
 from test import load_test
 from system import relative_path
 from prediction import get_values_and_names, Comparison
+
+config = Config()
 
 
 class DesiredPattern(Enum):
@@ -31,6 +36,19 @@ def copy_from_treeview(tree, event):
     pyperclip.copy(result)
 
 
+def generate_treeview(window: ttk.Window):
+        # Similar Result Treeview
+        tree = ttk.Treeview(window, columns=('values', 'names', "origin"), show='headings')
+        tree.bind("<Control-c>", lambda x: copy_from_treeview(tree, x))
+        tree.bind("<Command-c>", lambda x: copy_from_treeview(tree, x))
+        tree.heading('values', text='Valor')
+        tree.heading('names', text='Nome')
+        tree.heading('origin', text='Fonte')
+
+        # Not Found Treeview
+        return tree
+
+
 class MainWindow:
     df_comp: pd.DataFrame
     df_income: pd.DataFrame
@@ -45,10 +63,12 @@ class MainWindow:
     threads: dict = {'submit': []}
     conversion_type: str = "Entradas"
 
-    comparison: Comparison
+    comparison: Comparison = Comparison()
 
     sum_comp: int = 0
     sum_income: int = 0
+
+    browser: scrape.TCBBrowser = scrape.TCBBrowser()
 
     class Colors:
         comp_not_found = "#a83232"
@@ -78,6 +98,32 @@ class MainWindow:
 
         load_test(self.income_entry, self.comp_entry)
 
+        self.tree_found_comp_label = ttk.Label(self.root, text="Comprovantes Encontrados (OK):")
+        self.tree_found_comp_label.grid(row=0, column=1)
+
+        self.tree_found_comp = generate_treeview(self.root)
+        self.tree_found_comp.grid(row=1, column=1, rowspan=3, padx=5, pady=5, sticky="nsew")
+
+        self.not_found_comp_label = ttk.Label(self.root, text="Comprovantes Não Encontrados (VERIFICAR):")
+        self.not_found_comp_label.grid(row=4, column=1)
+
+        self.tree_not_found_comp = generate_treeview(self.root)
+        self.tree_not_found_comp.grid(row=5, column=1, rowspan=3, padx=5, sticky="nsew")
+
+        self.tree_found_income_label = ttk.Label(self.root, text="Entradas Encontradas (OK):")
+        self.tree_found_income_label.grid(row=0, column=2)
+
+        self.tree_found_income = generate_treeview(self.root)
+        self.tree_found_income.grid(row=1, column=2, rowspan=3, padx=5, pady=5, sticky="nsew")
+
+        self.not_found_income_label = ttk.Label(self.root, text="Entradas Não Encontradas (INCLUIR):")
+        self.not_found_income_label.grid(row=4, column=2)
+
+        self.tree_not_found_income = generate_treeview(self.root)
+        self.tree_not_found_income.grid(row=5, column=2, rowspan=3, padx=5, sticky="nsew")
+
+        self.trees = [self.tree_found_comp, self.tree_not_found_comp, self.tree_found_income, self.tree_not_found_income]
+
         # Submit Button
         submit_button = ttk.Button(self.root, text="Comparar", command=self.compare_income_comp)
         submit_button.grid(row=4, column=0, pady=(10, 0))
@@ -88,44 +134,25 @@ class MainWindow:
         convert_button_outgoing = ttk.Button(self.root, text="Converter Saidas", command=lambda: self.convert_statement_to_table(DesiredPattern.outgoing))
         convert_button_outgoing.grid(row=6, column=0, pady=(10, 0))
 
-        # Submit Button
-        copy_result = ttk.Button(self.root, text="Copiar Resultado", command=self.copy_result)
-        copy_result.grid(row=7, column=0, pady=(10, 0))
+        self.copy_result = ttk.Button(self.root, text="Copiar Resultado", command=self.comparison.copy_result)
+        self.copy_result.grid(row=7, column=0, pady=(10, 0))
 
-        # Similar Result Treeview
-        found_label = ttk.Label(self.root, text="Encontrados:")
-        found_label.grid(row=0, column=1, sticky="w")
+        self.open_browser = ttk.Button(self.root, text="Abrir Site", command=self.open_tcb_website)
+        self.open_browser.grid(row=9, column=0, pady=(10, 10))
 
-        self.found_tree = ttk.Treeview(self.root, columns=('values', 'names', "origin"), show='headings')
-        self.found_tree.bind("<Control-c>", lambda x: copy_from_treeview(self.found_tree, x))
-        self.found_tree.bind("<Command-c>", lambda x: copy_from_treeview(self.found_tree, x))
-        self.found_tree.heading('values', text='Valor')
-        self.found_tree.heading('names', text='Nome')
-        self.found_tree.heading('origin', text='Fonte')
-        self.found_tree.grid(row=1, column=1, rowspan=4, padx=5, pady=5, sticky="nsew")
+        self.menu = ttk.Menu(self.root)
+        self.menu.add_command(label="Config", command=self.open_config)
 
-        # Not Found Treeview
-        not_found_label = ttk.Label(self.root, text="Não Encontrados:")
-        not_found_label.grid(row=0, column=2, sticky="w")
-
-        self.not_found_tree = ttk.Treeview(self.root, columns=('values', 'names', "origin"), show='headings')
-        self.not_found_tree.bind("<Control-c>", lambda x: copy_from_treeview(self.not_found_tree, x))
-        self.not_found_tree.bind("<Command-c>", lambda x: copy_from_treeview(self.not_found_tree, x))
-
-        self.not_found_tree.heading('values', text='Valor')
-        self.not_found_tree.heading('names', text='Nome')
-        self.not_found_tree.heading('origin', text='Fonte')
-        self.not_found_tree.tag_configure('comprobantes', background=self.Colors.comp_not_found)
-        self.not_found_tree.tag_configure('entradas', background=self.Colors.income_not_found)
-        self.not_found_tree.grid(row=1, column=2, rowspan=4, padx=5, pady=5, sticky="nsew")
+        self.open_config = ttk.Button(self.root, text="Configuracoes", command=self.open_config)
+        self.open_config.grid(row=8, column=0, pady=(10, 0))
 
         # Result Label for Length
         self.result_label = ttk.Label(self.root, text="")
-        self.result_label.grid(row=5, column=0, columnspan=3, pady=(10, 0))
+        self.result_label.grid(row=8, column=0, columnspan=3, pady=(10, 0))
 
         # Label for Sum of values
         self.sum_label = ttk.Label(self.root, text="")
-        self.sum_label.grid(row=6, column=0, columnspan=3, pady=(5, 10))
+        self.sum_label.grid(row=9, column=0, columnspan=3, pady=(5, 10))
 
         # Configure resizing behavior
         self.root.columnconfigure(0, weight=1)
@@ -136,6 +163,42 @@ class MainWindow:
 
         self.root.mainloop()
 
+    def open_tcb_website(self):
+        config.load()
+        self.browser(config.tcb_user.value, config.tcb_password.value)
+
+    def open_config(self):
+        self.config_window = ttk.Toplevel(title="Configurações")
+        self.config_window.geometry("500x500")  # Set initial size (optional)
+        self.config_window.rowconfigure(0, weight=1)  # Make the window vertically resizable
+        self.config_window.columnconfigure(0, weight=1)  # Make the window horizontally resizable
+
+        last_row_idx = 0
+
+        for idx, conf in enumerate(config.iter()):
+            label_name = f"{idx}_label"
+            self.__setattr__(label_name, ttk.Label(self.config_window, text=f"{conf.label}: "))
+            this_label: ttk.Label = self.__getattribute__(label_name)
+            this_label.grid(row=idx, column=0, columnspan=1, pady=(10, 0), sticky="e")  # Align label to the west (left)
+
+            self.__setattr__(conf.entry_name, ttk.Entry(self.config_window, width=10))
+            this_entry: ttk.Entry = self.__getattribute__(conf.entry_name)
+            this_entry.grid(row=idx, column=1, columnspan=3, pady=(10, 0),
+                            sticky="ew")  # Make the entry expand horizontally
+            if conf.value is not None:
+                this_entry.insert(0, conf.value)
+
+            last_row_idx = idx
+
+        self.config_save_button = ttk.Button(self.config_window, text="Salvar", command=lambda: config.save(self))
+        self.config_save_button.grid(row=last_row_idx + 1, column=1, columnspan=2, pady=(10, 10), sticky="ew")
+
+        # Configure the columns and rows for responsiveness
+        for col in range(5):  # Assume up to 5 columns
+            self.config_window.grid_columnconfigure(col, weight=1)  # Make each column expandable
+        for row in range(last_row_idx + 2):  # Configure rows up to the last row
+            self.config_window.grid_rowconfigure(row, weight=1)
+
     def on_submit(self, comp_text: list, income_text: list):
 
         self.df_comp = get_values_and_names(comp_text)
@@ -144,7 +207,14 @@ class MainWindow:
         self.sum_comp = self.df_comp['values'].sum()
         self.sum_income = self.df_income['values'].sum()
 
-        self.comparison = Comparison(df_income=self.df_income, df_comp=self.df_comp)
+        self.comparison = self.comparison(df_income=self.df_income, df_comp=self.df_comp)
+
+    def clean_trees(self):
+        for tree in self.trees:
+            # Update the Treeview with the similar result
+            for child in tree.get_children():
+                tree.delete(child)
+
 
     def compare_income_comp(self, ):
 
@@ -161,35 +231,22 @@ class MainWindow:
 
                 self.sum_label.config(text=f"Total em Comprovantes: {float(self.sum_comp):.2f} | Total em Entradas: {float(self.sum_income):.2f}\nTotal de diferença: {float(self.sum_comp - self.sum_income):.2f}")
 
-                # Update the Treeview with the similar result
-                for child in self.found_tree.get_children():
-                    self.found_tree.delete(child)
+                self.clean_trees()
 
                 try:
                     for index, row in self.comparison.result.df_found.iterrows():
-                        if row['origin'] == "comprobantes":
-                            self.found_tree.insert('', ttk.END, values=(row['values'], row['names'], row['origin']))
+                        if row['origin'] == "comp":
+                            self.tree_found_comp.insert('', ttk.END, values=(row['values'], row['names'], "Comprovante"))
                 except:
                     pass
 
-                try:
-                    for child in self.not_found_tree.get_children():
-                        self.not_found_tree.delete(child)
-                except:
-                    pass
-
-                self.result_label.config(text=f"Encontrados: {len(self.comparison.result.df_found)} | Não Encontrados: {self.not_found_count}")
-
-                self.not_found_count = 0
                 for index, row in self.comparison.result.df_not_found_income.iterrows():
-                    self.not_found_tree.insert('', ttk.END, values=(row['values'], row['names'], row['origin']), tags=('entradas',))
-                    self.not_found_count += 1
+                    self.tree_not_found_income.insert('', ttk.END, values=(row['values'], row['names'], 'Entrada'), tags=('entradas',))
 
                 for index, row in self.comparison.result.df_not_found_comp.iterrows():
-                    self.not_found_tree.insert('', ttk.END, values=(row['values'], row['names'], row['origin']), tags=('comprobantes',))
-                    self.not_found_count += 1
+                    self.tree_not_found_comp.insert('', ttk.END, values=(row['values'], row['names'], 'Comprovante'), tags=('comprobantes',))
 
-                self.result_label.config(text=f"Encontrados: {len(self.comparison.result.df_found)} | Não Encontrados: {self.not_found_count}")
+                self.result_label.config(text=f"""Comprovantes Encontrados: {len(self.comparison.result.df_found[self.comparison.result.df_found["ids"].isin(self.comparison.already_used_comp_ids)])} | Comprovantes Não Encontrados: {len(self.comparison.result.df_not_found_comp)}\nEntradas Encontradas: {len(self.comparison.result.df_found[self.comparison.result.df_found["ids"].isin(self.comparison.already_used_income_ids)])} | Entradas Não Encontradas: {len(self.comparison.result.df_not_found_income)}""")
 
         run_in_bg()
 
