@@ -13,7 +13,7 @@ from config import Config
 config = Config()
 
 
-def get_values_and_names(content: Union[list, str], skipcols=0) -> pd.DataFrame:
+def get_values_and_names(content: Union[list, str], skipcols=0, ignored: Union[list, None] = None) -> pd.DataFrame:
     values_pattern = r'R\$ ([^\t]+)'
 
     values = []
@@ -23,39 +23,52 @@ def get_values_and_names(content: Union[list, str], skipcols=0) -> pd.DataFrame:
     if isinstance(content, str):
         content = content.split('\n')
 
-    for item in content:
-        value_match = re.search(values_pattern, item)
-        value = False
-        if value_match:
-            value_str = value_match.group(1)
-            value_str = value_str.replace('.', '')
-            value = value_str.replace(',', '.')
-        else:
-            row = item.split('\t')
-            for each in row:
-                try:
-                    each = each.replace('.', '')
-                    each = each.replace(',', '.')
-                    value = float(each)
+    filtered_content = []
+
+    for idx, item in enumerate(content):
+        ignore: bool = False
+
+        if ignored is not None:
+            for name_to_ignore in ignored:
+                if re.search(fr"{name_to_ignore}", item, re.IGNORECASE):
+                    ignore = True
                     break
-                except:
-                    pass
-        if value:
-            values.append(float(value))
-        else:
-            values.append(None)
 
-        # Extract names
-        names_match = re.search(r'\t([^\t]+)$', item)
-        if names_match:
-            name = names_match.group(1)
-            names.append(name)
-        else:
-            names.append(None)
-        ids.append(uuid4().hex)
+        if not ignore:
+            value_match = re.search(values_pattern, item)
+            value = None
 
-    df = pd.DataFrame({"ids": ids, 'values': values, 'names': names, 'original': content})
+            if value_match:
+                value_str = value_match.group(1)
+                value_str = value_str.replace('.', '')
+                value = value_str.replace(',', '.')
+            else:
+                row = item.split('\t')
+                for each in row:
+                    try:
+                        each = each.replace('.', '')
+                        each = each.replace(',', '.')
+                        value = float(each)
+                        break
+                    except:
+                        pass
+
+            values.append(float(value) if value else None)
+
+            names_match = re.search(r'\t([^\t]+)$', item)
+            if names_match:
+                name = names_match.group(1)
+                names.append(name)
+            else:
+                names.append(None)
+
+            ids.append(uuid4().hex)
+
+            filtered_content.append(item)
+
+    df = pd.DataFrame({"ids": ids, 'values': values, 'names': names, 'original': filtered_content})
     df.dropna(subset=['values', 'names'], how='all', inplace=True)
+
     return df
 
 

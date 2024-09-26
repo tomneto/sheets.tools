@@ -16,7 +16,7 @@ from test import load_test
 from system import relative_path
 from prediction import get_values_and_names, Comparison
 
-config = Config()
+
 
 
 class DesiredPattern(Enum):
@@ -50,6 +50,8 @@ def generate_treeview(window: ttk.Window):
 
 
 class MainWindow:
+    config: Config = Config()
+
     df_comp: pd.DataFrame
     df_income: pd.DataFrame
     
@@ -164,8 +166,8 @@ class MainWindow:
         self.root.mainloop()
 
     def open_tcb_website(self):
-        config.load()
-        self.browser(config.tcb_user.value, config.tcb_password.value)
+        self.config.load()
+        self.browser(self.config.tcb_user.value, self.config.tcb_password.value)
 
     def open_config(self):
         self.config_window = ttk.Toplevel(title="Configurações")
@@ -175,7 +177,7 @@ class MainWindow:
 
         last_row_idx = 0
 
-        for idx, conf in enumerate(config.iter()):
+        for idx, conf in enumerate(self.config.iter()):
             label_name = f"{idx}_label"
             self.__setattr__(label_name, ttk.Label(self.config_window, text=f"{conf.label}: "))
             this_label: ttk.Label = self.__getattribute__(label_name)
@@ -190,7 +192,7 @@ class MainWindow:
 
             last_row_idx = idx
 
-        self.config_save_button = ttk.Button(self.config_window, text="Salvar", command=lambda: config.save(self))
+        self.config_save_button = ttk.Button(self.config_window, text="Salvar", command=self.save_config)
         self.config_save_button.grid(row=last_row_idx + 1, column=1, columnspan=2, pady=(10, 10), sticky="ew")
 
         # Configure the columns and rows for responsiveness
@@ -199,10 +201,22 @@ class MainWindow:
         for row in range(last_row_idx + 2):  # Configure rows up to the last row
             self.config_window.grid_rowconfigure(row, weight=1)
 
+    def save_config(self):
+        content = []
+        for conf in self.config.iter():
+
+            conf.set(self.__getattribute__(conf.entry_name))
+            conf_dict = conf.as_dict()
+            conf_dict['type'] = conf.value_type.__name__  # Store the type as a string
+            content.append(conf_dict)
+
+        self.config.save(content)
+
     def on_submit(self, comp_text: list, income_text: list):
 
-        self.df_comp = get_values_and_names(comp_text)
-        self.df_income = get_values_and_names(income_text)
+        to_ignore = self.config.ignored_income_names.get()
+        self.df_comp = get_values_and_names(comp_text, ignored=to_ignore)
+        self.df_income = get_values_and_names(income_text, ignored=to_ignore)
 
         self.sum_comp = self.df_comp['values'].sum()
         self.sum_income = self.df_income['values'].sum()

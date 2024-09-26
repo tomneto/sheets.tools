@@ -97,8 +97,6 @@ class TCBBrowser:
         except Exception as e:
             email_element = None
 
-        ic(email_element)
-
         if email_element is not None:
             email_in = self.browser.find_element(self.Selector.selection_type, self.Selector.email)
             email_in.send_keys(self.user)

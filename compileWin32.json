@@ -7,7 +7,7 @@
   },
   {
    "optionDest": "filenames",
-   "value": "//VAULT/Git/Clientes/TCB/sheets.tools/main.py"
+   "value": "C:/Users/anton/Desktop/SHEET.TOOLS/main.py"
   },
   {
    "optionDest": "onefile",
@@ -19,7 +19,7 @@
   },
   {
    "optionDest": "icon_file",
-   "value": "//VAULT/Git/Clientes/TCB/sheets.tools/icon.ico"
+   "value": "C:/Users/anton/Desktop/SHEET.TOOLS/icon.ico"
   },
   {
    "optionDest": "clean_build",
@@ -55,11 +55,11 @@
   },
   {
    "optionDest": "datas",
-   "value": "//VAULT/Git/Clientes/TCB/sheets.tools/icon.ico;."
+   "value": "C:/Users/anton/Desktop/SHEET.TOOLS/icon.png;."
   },
   {
    "optionDest": "datas",
-   "value": "//VAULT/Git/Clientes/TCB/sheets.tools/icon.png;."
+   "value": "C:/Users/anton/Desktop/SHEET.TOOLS/icon.ico;."
   }
  ],
  "nonPyinstallerOptions": {
