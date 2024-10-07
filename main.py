@@ -17,8 +17,6 @@ from system import relative_path
 from prediction import get_values_and_names, Comparison
 
 
-
-
 class DesiredPattern(Enum):
     incoming: str = "incoming"
     outgoing: str = "outgoing"
@@ -37,16 +35,16 @@ def copy_from_treeview(tree, event):
 
 
 def generate_treeview(window: ttk.Window):
-        # Similar Result Treeview
-        tree = ttk.Treeview(window, columns=('values', 'names', "origin"), show='headings')
-        tree.bind("<Control-c>", lambda x: copy_from_treeview(tree, x))
-        tree.bind("<Command-c>", lambda x: copy_from_treeview(tree, x))
-        tree.heading('values', text='Valor')
-        tree.heading('names', text='Nome')
-        tree.heading('origin', text='Fonte')
+     # Similar Result Treeview
+    tree = ttk.Treeview(window, columns=('values', 'names', "origin"), show='headings')
+    tree.bind("<Control-c>", lambda x: copy_from_treeview(tree, x))
+    tree.bind("<Command-c>", lambda x: copy_from_treeview(tree, x))
+    tree.heading('values', text='Valor')
+    tree.heading('names', text='Nome')
+    tree.heading('origin', text='Fonte')
 
-        # Not Found Treeview
-        return tree
+    # Not Found Treeview
+    return tree
 
 
 class MainWindow:
@@ -229,7 +227,6 @@ class MainWindow:
             for child in tree.get_children():
                 tree.delete(child)
 
-
     def compare_income_comp(self, ):
 
         comp_text = self.comp_entry.get("1.0", "end-1c").split('\n')
@@ -276,6 +273,7 @@ class MainWindow:
 
         for item in income_text:
             value = False
+            ignore: bool = False
 
             if desired_pattern != DesiredPattern.outgoing:
                 value_match = re.search(values_pattern, item)
@@ -283,6 +281,13 @@ class MainWindow:
                 names_match = re.search(r'\t([^\t]+)', item)
                 criteria = value_match and not negative_value_match
                 self.conversion_type = "Entradas"
+
+                if self.config.ignored_income_names.get() is not None:
+                    for name_to_ignore in self.config.ignored_income_names.get():
+                        if re.search(fr"{name_to_ignore}", item, re.IGNORECASE):
+                            ignore = True
+                            break
+
             else:
                 outgoing_value_pattern = r'-R\$ ([^\t]+)'
                 negative_value_match = re.search(outgoing_value_pattern, item)
@@ -291,6 +296,12 @@ class MainWindow:
 
                 criteria = value_match and negative_value_match
                 self.conversion_type = "Saídas"
+
+                if self.config.ignored_outgoing_names.get() is not None:
+                    for name_to_ignore in self.config.ignored_income_names.get():
+                        if re.search(fr"{name_to_ignore}", item, re.IGNORECASE):
+                            ignore = True
+                            break
 
             if criteria:
                 value_str = value_match.group(1)
@@ -308,22 +319,25 @@ class MainWindow:
                         break
                     except:
                         pass
-            if value:
-                values.append(float(value))
-            else:
-                values.append(None)
 
-            # Extract names
+            if not ignore:
+                if value:
+                    values.append(float(value))
+                else:
+                    values.append(None)
 
-            if names_match:
-                name = names_match.group(1)
-                names.append(name)
-            else:
-                names.append(None)
+                # Extract names
 
-            ids.append(uuid.uuid4().hex)
+                if names_match:
+                    name = names_match.group(1)
+                    names.append(name)
+                else:
+                    names.append(None)
+
+                ids.append(uuid.uuid4().hex)
 
         df = pd.DataFrame({'values': values, 'names': names})
+
         df.dropna(subset=['values', 'names'], how='all', inplace=True)
 
         result = ""

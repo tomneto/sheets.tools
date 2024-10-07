@@ -70,6 +70,7 @@ class Config:
     tcb_user = Configuration(label="TCB User", type=str)
     tcb_password = Configuration(label="TCB Password", type=str)
     ignored_income_names = Configuration(label="Nomes Para Ignorar (Entradas)", type=list, default=[])
+    ignored_outgoing_names = Configuration(label="Nomes Para Ignorar (Saídas)", type=list, default=[])
 
     _ignored: list = ["iter", "save", "load", "_ignored", "_conf_fp", "type_mapping", "saving"]
     _conf_fp: str = "./conf.json"
