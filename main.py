@@ -1,13 +1,16 @@
 import os
 import re
 import threading
+import time
 import uuid
+from datetime import datetime
 from enum import Enum
-from tkinter import PhotoImage
+from tkinter import PhotoImage, filedialog
 
 import pandas as pd
 import ttkbootstrap as ttk
 import pyperclip
+from future.backports.datetime import timedelta
 from icecream import ic
 
 import scrape
@@ -69,6 +72,8 @@ class MainWindow:
     sum_income: int = 0
 
     browser: scrape.TCBBrowser = scrape.TCBBrowser()
+    file_path = None
+
 
     class Colors:
         comp_not_found = "#a83232"
@@ -137,7 +142,7 @@ class MainWindow:
         self.copy_result = ttk.Button(self.root, text="Copiar Resultado", command=self.comparison.copy_result)
         self.copy_result.grid(row=7, column=0, pady=(10, 0))
 
-        self.open_browser = ttk.Button(self.root, text="Abrir Site", command=self.open_tcb_website)
+        self.open_browser = ttk.Button(self.root, text="Abrir Arquivo", command=self.open_file_dialog)
         self.open_browser.grid(row=9, column=0, pady=(10, 10))
 
         self.menu = ttk.Menu(self.root)
@@ -166,6 +171,25 @@ class MainWindow:
     def open_tcb_website(self):
         self.config.load()
         self.browser(self.config.tcb_user.value, self.config.tcb_password.value)
+
+    def process_cashway(self):
+        df = pd.read_excel(self.file_path, skiprows=5)
+        if self.config.file_data_selection.get() == "now":
+            print(datetime.now().strftime("%d/%m/%Y"))
+            df = df[df["Data"] == datetime.now().strftime("%d/%m/%Y")]
+
+            print(df)
+        df.rename(columns={'Histórico': 'names', "Valor": "values"}, inplace=True)
+        self.copy_incoming_from_df(df)
+
+    def open_file_dialog(self):
+        self.file_path = filedialog.askopenfilename(
+            title="Selecione um arquivo",
+            filetypes=[("Planilhas", "*.xls"), ("Planilhas", "*.xlsx"), ("Todos os Arquivos", "*.*")]
+        )
+        if self.file_path:
+            print("Arquivo selecionado:", self.file_path)
+            self.process_cashway()
 
     def open_config(self):
         self.config_window = ttk.Toplevel(title="Configurações")
@@ -261,6 +285,24 @@ class MainWindow:
 
         run_in_bg()
 
+    def copy_incoming_from_df(self, df: pd.DataFrame):
+
+        result = ""
+        total_incoming = 0
+
+        # process only positive values:
+        for index, row in df[~pd.isna(df['values'])].iterrows():
+            result += f"""{str(row['values']).replace('.', ',')}"""
+            result += f"""\t{str(row['names'])}"""
+            total_incoming += float(row['values'])
+            result += "\n"
+
+        self.sum_label.config(
+
+            text=f"Total em {self.conversion_type}: {float(total_incoming):.2f}")
+
+        pyperclip.copy(str(result))
+
     def convert_statement_to_table(self, desired_pattern: DesiredPattern = DesiredPattern.incoming):
 
         income_text = self.income_entry.get("1.0", "end-1c").split('\n')
@@ -340,21 +382,7 @@ class MainWindow:
 
         df.dropna(subset=['values', 'names'], how='all', inplace=True)
 
-        result = ""
-        total_incoming = 0
-
-        # process only positive values:
-        for index, row in df[~pd.isna(df['values'])].iterrows():
-            result += f"""{str(row['values']).replace('.', ',')}"""
-            result += f"""\t{str(row['names'])}"""
-            total_incoming += float(row['values'])
-            result += "\n"
-
-        self.sum_label.config(
-
-            text=f"Total em {self.conversion_type}: {float(total_incoming):.2f}")
-
-        pyperclip.copy(str(result))
+        self.copy_incoming_from_df(df)
 
 
 MainWindow()

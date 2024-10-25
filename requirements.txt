@@ -8,3 +8,4 @@ auto-py-to-exe
 bs4
 selenium
 cryptography
+openpyxl

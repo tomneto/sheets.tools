@@ -8,7 +8,7 @@ import threading
 from typing import Union, Type
 import ttkbootstrap as ttk
 from icecream import ic
-from cryptography.fernet import Fernet
+
 
 from system import hide_file_windows
 
@@ -71,6 +71,8 @@ class Config:
     tcb_password = Configuration(label="TCB Password", type=str)
     ignored_income_names = Configuration(label="Nomes Para Ignorar (Entradas)", type=list, default=[])
     ignored_outgoing_names = Configuration(label="Nomes Para Ignorar (Saídas)", type=list, default=[])
+
+    file_data_selection = Configuration(label="Data para selecionar", type=str, default="now")
 
     _ignored: list = ["iter", "save", "load", "_ignored", "_conf_fp", "type_mapping", "saving"]
     _conf_fp: str = "./conf.json"

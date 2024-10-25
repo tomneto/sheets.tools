@@ -1,28 +1,4 @@
 import os
-from cryptography.fernet import Fernet
-
-
-
-def save_key(key, filename):
-    with open(filename, 'wb') as key_file:
-        key_file.write(key)
-
-
-def load_key(filename):
-    with open(filename, 'rb') as key_file:
-        return key_file.read()
-
-
-def encrypt_message(message, key):
-    fernet = Fernet(key)
-    encrypted_message = fernet.encrypt(message.encode())
-    return encrypted_message
-
-
-def decrypt_message(encrypted_message, key):
-    fernet = Fernet(key)
-    decrypted_message = fernet.decrypt(encrypted_message).decode()
-    return decrypted_message
 
 
 def relative_path(relative_path) -> str:
