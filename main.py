@@ -174,10 +174,23 @@ class MainWindow:
 
     def process_cashway(self):
         df = pd.read_excel(self.file_path, skiprows=5)
-        if self.config.file_data_selection.get() == "now":
-            print(datetime.now().strftime("%d/%m/%Y"))
-            df = df[df["Data"] == datetime.now().strftime("%d/%m/%Y")]
-
+        data_selection_lower = str(self.config.file_data_selection.get()).lower()
+        date_format = "%d/%m/%Y"
+        if "/" in data_selection_lower or "-" in data_selection_lower:
+            try:
+                datetime.strptime(data_selection_lower, date_format)
+            except:
+                data_selection_lower = "now"
+        
+        if data_selection_lower == "now":
+            today = datetime.now().strftime(date_format)
+            print(today)
+            df = df[df["Data"] == today]
+            print(df)
+        elif data_selection_lower == "yesterday":
+            yesterday = (datetime.now() - timedelta(days=1)).strftime(date_format)
+            print(yesterday)
+            df = df[df["Data"] == yesterday]
             print(df)
         df.rename(columns={'Histórico': 'names', "Valor": "values"}, inplace=True)
         self.copy_incoming_from_df(df)
@@ -292,10 +305,12 @@ class MainWindow:
 
         # process only positive values:
         for index, row in df[~pd.isna(df['values'])].iterrows():
-            result += f"""{str(row['values']).replace('.', ',')}"""
-            result += f"""\t{str(row['names'])}"""
-            total_incoming += float(row['values'])
-            result += "\n"
+            if "-" not in str(row["values"]):
+                result += f"""{str(row['values']).replace('.', ',')}"""
+                result += f"""\t{str(row['names'])}"""
+            
+                total_incoming += float(row['values'])
+                result += "\n"
 
         self.sum_label.config(
 

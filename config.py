@@ -72,7 +72,7 @@ class Config:
     ignored_income_names = Configuration(label="Nomes Para Ignorar (Entradas)", type=list, default=[])
     ignored_outgoing_names = Configuration(label="Nomes Para Ignorar (Saídas)", type=list, default=[])
 
-    file_data_selection = Configuration(label="Data para selecionar", type=str, default="now")
+    file_data_selection = Configuration(label="Data para selecionar (Now, Yesterday or dd/mm/yyyy)", type=str, default="now")
 
     _ignored: list = ["iter", "save", "load", "_ignored", "_conf_fp", "type_mapping", "saving"]
     _conf_fp: str = "./conf.json"
